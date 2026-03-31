@@ -1,6 +1,7 @@
 # Sensitive local auth artifacts
 cookiesx.json
 cookies.txt
+cookiesx.local.json
 
 # Local virtual environments
 .venv/
@@ -9,3 +10,6 @@ venv/
 # Optional local env files
 .env
 .env.*
+
+# Debug artifacts
+debug_artifacts/

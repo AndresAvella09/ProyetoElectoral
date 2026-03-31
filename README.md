@@ -23,15 +23,19 @@ pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-## Autenticacion opcional (cookies)
+## Autenticacion opcional (usuario/contrasena)
 
-Si X te bloquea contenido sin login, pasa cookies por variable de entorno (NO versionar archivos):
+Usa el archivo `.env`:
 
-```powershell
-$env:X_COOKIES_JSON = Get-Content .\cookiesx.local.json -Raw
+```
+X_USERNAME=tu_usuario_o_email
+X_PASSWORD=tu_contrasena
+X_LOGIN_HINT=tu_usuario_o_email
+X_WAIT_FOR_LOGIN=0
 ```
 
-El archivo `cookiesx.local.json` es un export de cookies del navegador. **No lo subas al repo.**
+- `X_LOGIN_HINT` solo se usa si X pide confirmar el usuario/email/telefono.
+- Si tienes 2FA, usa `--headful` y `X_WAIT_FOR_LOGIN=1` para completar manualmente.
 
 ## Uso desde notebook
 
@@ -45,12 +49,41 @@ El archivo `cookiesx.local.json` es un export de cookies del navegador. **No lo 
 python playwright_scrape.py --query "elecciones Colombia since:2022-01-01 until:2022-12-31 lang:es" --limit 500 --out tweets_colombia.csv --headless
 ```
 
+## Logs y debug
+
+Activa logs detallados y guarda artifacts cuando el CSV salga vacio:
+
+```powershell
+python playwright_scrape.py --query "..." --limit 50 --headful --log-level DEBUG --debug-dir debug_artifacts
+Guarda logs en archivo:
+
+```powershell
+python playwright_scrape.py --query "..." --limit 50 --log-level DEBUG --log-file debug_artifacts\scrape.log
+```
+```
+
+Tambien puedes definir en `.env`:
+
+```
+X_LOG_LEVEL=DEBUG
+X_DEBUG_DIR=./debug_artifacts
+X_LOG_FILE=./debug_artifacts/scrape.log
+```
+
 ## Parametros utiles
 
 - `--headful` abre la ventana del navegador (depuracion).
 - `--max-scrolls` controla el maximo de scrolls.
 - `--scroll-pause` pausa entre scrolls.
 - `--chunk-size` guarda lotes parciales a CSV.
+- `--log-level` controla el nivel de log (DEBUG/INFO/WARNING/ERROR).
+- `--debug-dir` guarda `empty_results.png` y `page.html` si no hay resultados.
+
+## Pruebas unitarias
+
+```powershell
+pytest -q
+```
 
 ## Estructura
 

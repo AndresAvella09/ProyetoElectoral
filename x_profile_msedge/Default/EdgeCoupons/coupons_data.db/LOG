@@ -1,0 +1,6 @@
+2026/03/31-00:16:28.912 6110 Reusing MANIFEST C:\Users\diego\Documents\Noveno Semestre\APPR\ProyetoElectoral\x_profile_msedge\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/03/31-00:16:28.912 6110 Recovering log #4
+2026/03/31-00:16:28.913 6110 Reusing old log C:\Users\diego\Documents\Noveno Semestre\APPR\ProyetoElectoral\x_profile_msedge\Default\EdgeCoupons/coupons_data.db/000004.log 
+2026/03/31-00:16:29.031 33c4 Level-0 table #8: started
+2026/03/31-00:16:29.037 33c4 Level-0 table #8: 682064 bytes OK
+2026/03/31-00:16:29.040 33c4 Delete type=0 #4
