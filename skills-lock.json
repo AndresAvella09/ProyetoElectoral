@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "clean-architecture": {
+      "source": "giuseppe-trisciuoglio/developer-kit",
+      "sourceType": "github",
+      "computedHash": "d1c91ecd9faf898e42437837956f2536540dab3aca053cb1114b7cfa15ee5bab"
+    },
+    "clean-code": {
+      "source": "sickn33/antigravity-awesome-skills",
+      "sourceType": "github",
+      "computedHash": "53e960930ce5af70af8d57539ee5682feeeace5f7befa8035bfe71e33e3cb4c0"
+    },
+    "python-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "8d8f38505821c76cac7cbfb1d6dd84597fb46b9c4734ccb24bb4bf0d45d8634c"
+    },
+    "web-scraping": {
+      "source": "jamditis/claude-skills-journalism",
+      "sourceType": "github",
+      "computedHash": "20ba74244cb5db47f88968171441502b0c3d6fbc61f07a53d6e79f9aa15b225f"
+    }
+  }
+}
