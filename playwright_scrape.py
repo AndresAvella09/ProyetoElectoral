@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import random
 import re
 import time
 from pathlib import Path
@@ -41,14 +42,16 @@ def _configure_logging(level: str, log_file: str | None) -> None:
     )
 
 
-def _to_int_count(text: str) -> int:
+def _to_int_count(text: str | None) -> int | None:
     if not text:
-        return 0
+        return None
     t = text.strip().upper().replace(",", "")
-    m = re.match(r"^([0-9]*\.?[0-9]+)([KMB])?$", t)
+    if not t:
+        return None
+    m = re.search(r"([0-9]*\.?[0-9]+)\s*([KMB])?", t)
     if not m:
         digits = re.sub(r"[^0-9]", "", t)
-        return int(digits) if digits else 0
+        return int(digits) if digits else None
     value = float(m.group(1))
     suffix = m.group(2)
     mult = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}.get(suffix, 1)
@@ -112,12 +115,35 @@ def _extract_text(article) -> str:
     return ""
 
 
-def _extract_action_count(article, action: str) -> int:
-    btn = article.locator(f'div[data-testid="{action}"]')
-    if btn.count() == 0:
-        return 0
-    raw = btn.first.inner_text().strip()
-    return _to_int_count(raw)
+def _extract_datetime(article) -> str | None:
+    time_node = article.locator("time")
+    if time_node.count() == 0:
+        return None
+    value = time_node.first.get_attribute("datetime")
+    return value or None
+
+
+def _extract_action_count(article, action: str) -> int | None:
+    locator = article.locator(f'[data-testid="{action}"]')
+    if locator.count() == 0:
+        return None
+
+    node = locator.first
+    aria_label = node.get_attribute("aria-label") or ""
+    count = _to_int_count(aria_label)
+    if count is not None:
+        return count
+
+    try:
+        text = node.inner_text().strip()
+    except Exception:
+        text = ""
+    count = _to_int_count(text)
+    if count is not None:
+        return count
+
+    parent_label = node.locator("..").get_attribute("aria-label") or ""
+    return _to_int_count(parent_label)
 
 
 def _get_real_profile_dir() -> str:
@@ -144,9 +170,33 @@ def scrape_x_search_playwright(
     debug_dir: str | None = None,
 ) -> pd.DataFrame:
     records: list[dict[str, Any]] = []
+    pending_records: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     out_path = Path(out_csv)
     start_time = time.time()
+
+    file_exists = out_path.exists()
+    if file_exists:
+        try:
+            existing = pd.read_csv(out_path, usecols=["id"])
+            existing_ids = (
+                existing["id"].dropna().astype(str).str.replace(r"\.0$", "", regex=True)
+            )
+            seen_ids.update(existing_ids.tolist())
+            logger.info("Loaded %s historical tweet IDs from %s", len(existing_ids), out_path)
+        except Exception as e:
+            logger.warning("Failed to load existing CSV for dedup: %s", e)
+
+    def _append_chunk(chunk: list[dict[str, Any]]) -> None:
+        nonlocal file_exists
+        if not chunk:
+            return
+        df_chunk = pd.DataFrame(chunk).drop_duplicates(subset=["id"])
+        if df_chunk.empty:
+            return
+        df_chunk.to_csv(out_path, mode="a", index=False, header=not file_exists)
+        file_exists = True
+        logger.info("Appended %s records (new total=%s)", len(df_chunk), len(records))
 
     logger.info("Starting scrape: limit=%s headless=%s max_scrolls=%s browser=msedge", limit, headless, max_scrolls)
     logger.debug("Query: %s", query)
@@ -206,6 +256,7 @@ def scrape_x_search_playwright(
 
         last_height = 0
         stagnant_rounds = 0
+        rescue_used = False
 
         for scroll_idx in range(max_scrolls):
             articles = page.locator('article[role="article"]')
@@ -221,15 +272,17 @@ def scrape_x_search_playwright(
                     continue
                 seen_ids.add(tweet_id)
 
-                records.append(
-                    {
-                        "id": tweet_id,
-                        "username": _extract_username(art),
-                        "content": _extract_text(art),
-                        "likes": _extract_action_count(art, "like"),
-                        "retweets": _extract_action_count(art, "retweet"),
-                    }
-                )
+                record = {
+                    "id": tweet_id,
+                    "datetime": _extract_datetime(art),
+                    "username": _extract_username(art),
+                    "content": _extract_text(art),
+                    "replies": _extract_action_count(art, "reply"),
+                    "retweets": _extract_action_count(art, "retweet"),
+                    "likes": _extract_action_count(art, "like"),
+                }
+                records.append(record)
+                pending_records.append(record)
 
                 if len(records) >= limit:
                     break
@@ -238,10 +291,13 @@ def scrape_x_search_playwright(
                 break
 
             if len(records) and len(records) % chunk_size == 0:
-                pd.DataFrame(records).drop_duplicates(subset=["id"]).to_csv(out_path, index=False)
-                logger.info("Saved chunk: %s records", len(records))
+                _append_chunk(pending_records)
+                pending_records.clear()
 
-            page.mouse.wheel(0, 5000)
+            scroll_steps = random.randint(3, 6)
+            for _ in range(scroll_steps):
+                page.mouse.wheel(0, random.randint(300, 900))
+                page.wait_for_timeout(random.randint(200, 500))
             page.wait_for_timeout(int(scroll_pause * 1000))
             new_height = page.evaluate("document.body.scrollHeight")
 
@@ -249,11 +305,32 @@ def scrape_x_search_playwright(
                 stagnant_rounds += 1
             else:
                 stagnant_rounds = 0
+                rescue_used = False
             last_height = new_height
 
-            if stagnant_rounds >= 4:
-                logger.info("Stopping after %s stagnant scrolls", stagnant_rounds)
-                break
+            if stagnant_rounds >= 3:
+                if not rescue_used:
+                    logger.info("Stagnant scroll detected; attempting rescue interaction")
+                    for _ in range(2):
+                        page.keyboard.press("PageUp")
+                        page.wait_for_timeout(300)
+                    page.keyboard.press("PageDown")
+                    page.wait_for_timeout(800)
+                    rescue_height = page.evaluate("document.body.scrollHeight")
+                    if rescue_height != last_height:
+                        last_height = rescue_height
+                        stagnant_rounds = 0
+                        rescue_used = False
+                    else:
+                        rescue_used = True
+                        logger.info("Rescue attempt did not change scroll height")
+                else:
+                    logger.info("Stopping after %s stagnant scrolls (rescue failed)", stagnant_rounds)
+                    break
+
+        if pending_records:
+            _append_chunk(pending_records)
+            pending_records.clear()
 
         if not records:
             logger.warning("No tweets captured; check Edge session and selectors")
@@ -267,9 +344,8 @@ def scrape_x_search_playwright(
         context.close()
 
     df = pd.DataFrame(records).drop_duplicates(subset=["id"]).head(limit)
-    df.to_csv(out_path, index=False)
     elapsed = time.time() - start_time
-    logger.info("Dataset saved: %s (%s rows, %.2fs)", out_path.resolve(), len(df), elapsed)
+    logger.info("Dataset updated: %s (new rows=%s, %.2fs)", out_path.resolve(), len(df), elapsed)
     return df
 
 
