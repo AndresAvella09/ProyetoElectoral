@@ -13,3 +13,8 @@ venv/
 
 # Debug artifacts
 debug_artifacts/
+
+# Collected data
+youtube_data.csv
+tweets_colombia.csv
+*.csv

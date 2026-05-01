@@ -19,3 +19,4 @@ python-dotenv
 sentencepiece
 torch
 transformers
+google-api-python-client
