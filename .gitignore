@@ -13,3 +13,6 @@ venv/
 
 # Debug artifacts
 debug_artifacts/
+
+# Datos
+.csv

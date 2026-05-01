@@ -159,6 +159,72 @@ def _get_real_profile_dir() -> str:
     return str(Path(local_app_data) / "Microsoft" / "Edge" / "User Data")
 
 
+def _prepare_output_columns(out_path: Path, query_column: str) -> list[str]:
+    default_columns = [
+        "id",
+        query_column,
+        "datetime",
+        "username",
+        "content",
+        "replies",
+        "retweets",
+        "likes",
+    ]
+    if not out_path.exists():
+        return default_columns
+
+    try:
+        existing_cols = list(pd.read_csv(out_path, nrows=0).columns)
+    except Exception as e:
+        logger.warning("Failed to read CSV header for query column check: %s", e)
+        return default_columns
+
+    existing_query_col = next(
+        (col for col in existing_cols if col.lower() == query_column.lower()),
+        None,
+    )
+    if existing_query_col and existing_query_col != query_column:
+        try:
+            df_existing = pd.read_csv(out_path)
+            df_existing = df_existing.rename(columns={existing_query_col: query_column})
+            df_existing.to_csv(out_path, index=False)
+            existing_cols = [
+                query_column if col == existing_query_col else col for col in existing_cols
+            ]
+            logger.info(
+                "Renamed column %s to %s in %s",
+                existing_query_col,
+                query_column,
+                out_path,
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to rename column %s to %s: %s",
+                existing_query_col,
+                query_column,
+                e,
+            )
+            return existing_cols
+
+    if not existing_query_col:
+        try:
+            df_existing = pd.read_csv(out_path)
+            df_existing[query_column] = ""
+            df_existing.to_csv(out_path, index=False)
+            existing_cols = existing_cols + [query_column]
+            logger.info("Added '%s' column to %s", query_column, out_path)
+        except Exception as e:
+            logger.warning(
+                "Failed to add '%s' column to %s: %s",
+                query_column,
+                out_path,
+                e,
+            )
+            return existing_cols
+
+    return existing_cols
+
+
 def scrape_x_search_playwright(
     query: str,
     limit: int = 500,
@@ -173,9 +239,11 @@ def scrape_x_search_playwright(
     pending_records: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     out_path = Path(out_csv)
+    query_column = "Query"
     start_time = time.time()
 
     file_exists = out_path.exists()
+    output_columns = _prepare_output_columns(out_path, query_column)
     if file_exists:
         try:
             existing = pd.read_csv(out_path, usecols=["id"])
@@ -194,6 +262,10 @@ def scrape_x_search_playwright(
         df_chunk = pd.DataFrame(chunk).drop_duplicates(subset=["id"])
         if df_chunk.empty:
             return
+        for col in output_columns:
+            if col not in df_chunk.columns:
+                df_chunk[col] = None
+        df_chunk = df_chunk[output_columns]
         df_chunk.to_csv(out_path, mode="a", index=False, header=not file_exists)
         file_exists = True
         logger.info("Appended %s records (new total=%s)", len(df_chunk), len(records))
@@ -274,6 +346,7 @@ def scrape_x_search_playwright(
 
                 record = {
                     "id": tweet_id,
+                    query_column: query,
                     "datetime": _extract_datetime(art),
                     "username": _extract_username(art),
                     "content": _extract_text(art),
